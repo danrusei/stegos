@@ -7,3 +7,10 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+libp2p = {version = "0.37", features = ["tcp-tokio", "gossipsub"]}
+libp2p-swarm = { version = "0.29.0"}
+libp2p-swarm-derive = { version = "0.23.0"}
+tokio = {version = "1.5", features = ["full"]}
+once_cell = "1.7"
+log = "0.4"
+env_logger = "0.8"

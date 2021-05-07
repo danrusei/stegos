@@ -1,6 +1,9 @@
+use crate::resources::Resource;
+
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
-use tokio::time::Duration;
+use tokio::{time::Duration, sync::mpsc};
+use serde::{Deserialize, Serialize};
 //use tokio::io::{self, AsyncBufReadExt};
 
 use libp2p::core::{muxing::StreamMuxerBox, transport, upgrade};
@@ -13,7 +16,24 @@ use libp2p::{identity, mplex, noise, tcp::TokioTcpConfig, PeerId, Transport};
 use libp2p_swarm::NetworkBehaviourEventProcess;
 use libp2p_swarm_derive::*;
 
-// We create a custom network behaviour that combines floodsub and mDNS.
+#[derive(Debug, Serialize, Deserialize)]
+ pub(crate) enum ResourceType {
+    CpuUsage,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub(crate) struct Request {
+    resource: ResourceType,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub(crate) struct Response {
+    resource: ResourceType,
+    data: Resource,
+    receiver: String,
+}
+
+// We create a custom network behaviour that combines Gossipsub and mDNS.
 // The derive generates a delegating `NetworkBehaviour` impl which in turn
 // requires the implementations of `NetworkBehaviourEventProcess` for
 // the events of each behaviour.
@@ -21,6 +41,8 @@ use libp2p_swarm_derive::*;
 pub(crate) struct StegosBehaviour {
     pub(crate) gossipsub: Gossipsub,
     pub(crate) mdns: Mdns,
+    #[behaviour(ignore)]
+    pub(crate) response_tx: mpsc::UnboundedSender<Response>,
 }
 
 impl NetworkBehaviourEventProcess<GossipsubEvent> for StegosBehaviour {

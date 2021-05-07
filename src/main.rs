@@ -1,10 +1,12 @@
 mod transport;
-use crate::transport::{StegosBehaviour, build_transport, configure_gossip};
+use crate::transport::{StegosBehaviour, build_transport, configure_gossip, Response};
+mod resources;
 
 use log::info;
 use once_cell::sync::Lazy;
 use env_logger::{Builder, Env};
-use tokio::io::{self, AsyncBufReadExt};
+use tokio::{io::{self, AsyncBufReadExt}, sync::mpsc};
+
 
 use libp2p::{Multiaddr, identity, PeerId, Swarm};
 use libp2p::gossipsub::{IdentTopic as Topic, Gossipsub, MessageAuthenticity};
@@ -20,6 +22,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Builder::from_env(Env::default().default_filter_or("info")).init();
     info!("starting PeerId: {:?}", PEER_ID.to_string());
 
+    //channel used to respond to the received pub/sub requests
+    let (response_tx, mut response_rx) = mpsc::unbounded_channel::<Response>();
+
     let mut swarm = {
         let transport = build_transport(&KEYS);
         let mdns = Mdns::new(Default::default()).await?;
@@ -27,6 +32,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let mut behaviour = StegosBehaviour {
             gossipsub: Gossipsub::new(MessageAuthenticity::Signed(KEYS.to_owned()), gossipsub_config).unwrap(),
             mdns,
+            response_tx,
         };
 
         behaviour.gossipsub.subscribe(&TOPIC).unwrap();
@@ -62,9 +68,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 event = swarm.next() => {
                     // All events are handled by the `NetworkBehaviourEventProcess`es.
-                    // I.e. the `swarm.next()` future drives the `Swarm` without ever
-                    // terminating.
-                    panic!("Unexpected event: {:?}", event);
+                    info!("Unhandled Swarm Event: {:?}", event);
+                    None
                 }
             }
         };

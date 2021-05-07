@@ -1,12 +1,11 @@
 mod transport;
-use crate::transport::{StegosBehaviour, build_transport, configure_gossip, Response};
+use crate::transport::{StegosBehaviour, build_transport, configure_gossip, Response, handle_list_peers};
 mod resources;
 
-use log::info;
+use log::{info, error};
 use once_cell::sync::Lazy;
 use env_logger::{Builder, Env};
 use tokio::{io::{self, AsyncBufReadExt}, sync::mpsc};
-
 
 use libp2p::{Multiaddr, identity, PeerId, Swarm};
 use libp2p::gossipsub::{IdentTopic as Topic, Gossipsub, MessageAuthenticity};
@@ -16,6 +15,11 @@ use libp2p_swarm::SwarmBuilder;
 static KEYS: Lazy<identity::Keypair> = Lazy::new(|| identity::Keypair::generate_ed25519());
 static PEER_ID: Lazy<PeerId> = Lazy::new(|| PeerId::from(KEYS.public()));
 static TOPIC: Lazy<Topic> = Lazy::new(|| Topic::new("usage"));
+
+enum EventType {
+    Response(Response),
+    Input(String),
+}
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -60,21 +64,31 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Kick it off
     let mut listening = false;
     loop {
-        let to_publish = {
+        let event = {
             tokio::select! {
                 line = stdin.next_line() => {
                     let line = line?.expect("stdin closed");
-                    Some((TOPIC.to_owned(), line))
+                    Some(EventType::Input(line))
                 }
                 event = swarm.next() => {
                     // All events are handled by the `NetworkBehaviourEventProcess`es.
                     info!("Unhandled Swarm Event: {:?}", event);
                     None
                 }
+                response = response_rx.recv() => Some(EventType::Response(response.expect("response exists"))),
             }
         };
-        if let Some((topic, line)) = to_publish {
-            swarm.behaviour_mut().gossipsub.publish(topic, line.as_bytes()).unwrap();
+        if let Some(evt) = event {
+            match evt {
+                EventType::Input(line) => match line.as_str() {
+                    "ls" => handle_list_peers(&mut swarm).await,
+                    _ => error!("unknown command"),
+                }
+                EventType::Response(resp) => {
+                    let json = serde_json::to_string(&resp).expect("can jsonify response");
+                    swarm.behaviour_mut().gossipsub.publish(TOPIC.to_owned(), json.as_bytes()).unwrap();
+                }
+            }
         }
         if !listening {
             for addr in Swarm::listeners(&swarm) {

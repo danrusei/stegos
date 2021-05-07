@@ -1,7 +1,8 @@
 use crate::resources::Resource;
 
-use std::collections::hash_map::DefaultHasher;
+use std::collections::{hash_map::DefaultHasher, HashSet};
 use std::hash::{Hash, Hasher};
+use log::info;
 use tokio::{time::Duration, sync::mpsc};
 use serde::{Deserialize, Serialize};
 //use tokio::io::{self, AsyncBufReadExt};
@@ -12,7 +13,7 @@ use libp2p::gossipsub::{
     MessageId, ValidationMode,
 };
 use libp2p::mdns::{Mdns, MdnsEvent};
-use libp2p::{identity, mplex, noise, tcp::TokioTcpConfig, PeerId, Transport};
+use libp2p::{identity, mplex, noise, tcp::TokioTcpConfig, PeerId, Transport, Swarm};
 use libp2p_swarm::NetworkBehaviourEventProcess;
 use libp2p_swarm_derive::*;
 
@@ -82,6 +83,16 @@ impl NetworkBehaviourEventProcess<MdnsEvent> for StegosBehaviour {
             }
         }
     }
+}
+
+pub(crate) async fn handle_list_peers(swarm: &mut Swarm<StegosBehaviour>) {
+    info!("Discovered Peers:");
+    let nodes = swarm.behaviour_mut().mdns.discovered_nodes();
+    let mut unique_peers = HashSet::new();
+    for peer in nodes {
+        unique_peers.insert(peer);
+    }
+    unique_peers.iter().for_each(|p| info!("{}", p));
 }
 
 pub(crate) fn build_transport(
